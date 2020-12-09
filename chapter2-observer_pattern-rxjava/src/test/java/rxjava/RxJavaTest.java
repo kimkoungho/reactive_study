@@ -2,8 +2,10 @@ package rxjava;
 
 import org.junit.jupiter.api.Test;
 import rx.Observable;
+import rx.Scheduler;
 import rx.Subscriber;
 import rx.Subscription;
+import rx.schedulers.Schedulers;
 
 import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
@@ -153,7 +155,37 @@ public class RxJavaTest {
 
     @Test
     public void testZip() {
-
+        Observable.zip(
+                Observable.just("A", "B", "C"),
+                Observable.just("1", "2", "3"),
+                (x, y) -> x + y
+        ).forEach(System.out::println);
     }
 
+    @Test
+    public void testTransformer() {
+        Observable.Transformer<String, Integer> toLengthFun = (stringObservable) -> stringObservable.map(String::length);
+
+        Observable.just("leo1", "leo@kakao.com", "abcdefg")
+                .compose(toLengthFun)
+                .subscribe(System.out::println);
+    }
+
+    @Test
+    public void testSchedulers() throws InterruptedException {
+        String query = "query";
+        Observable.fromCallable(() -> doSlowSyncRequest(query))
+                .subscribeOn(Schedulers.io())
+                .subscribe(this::processResult);
+
+        Thread.sleep(1000);
+    }
+
+    private String doSlowSyncRequest(String query) {
+        return "result";
+    }
+
+    private void processResult(String result) {
+        System.out.println(Thread.currentThread().getName() + ": " + result);
+    }
 }

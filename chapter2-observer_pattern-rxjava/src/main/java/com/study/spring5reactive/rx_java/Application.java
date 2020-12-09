@@ -1,18 +1,13 @@
-package com.study.spring5reactive;
+package com.study.spring5reactive.rx_java;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import rx.Observable;
-import rx.Subscriber;
 
 
 @SpringBootApplication
-public class Spring5reactiveApplication {
+public class Application {
 
 	public static void main(String[] args) {
-		SpringApplication.run(Spring5reactiveApplication.class, args);
+		SpringApplication.run(Application.class, args);
 	}
-
-
-
 }
