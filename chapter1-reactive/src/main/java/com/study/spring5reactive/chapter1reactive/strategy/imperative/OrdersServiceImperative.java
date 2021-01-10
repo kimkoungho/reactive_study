@@ -3,14 +3,14 @@ package com.study.spring5reactive.chapter1reactive.strategy.imperative;
 import com.study.spring5reactive.chapter1reactive.common.Input;
 import com.study.spring5reactive.chapter1reactive.common.Output;
 
-public class OrdersService {
-    private final ShoppingCardService scService;
+public class OrdersServiceImperative {
+    private final ShoppingCardServiceImperative scService;
 
-    public OrdersService(ShoppingCardService scService) {
+    public OrdersServiceImperative(ShoppingCardServiceImperative scService) {
         this.scService = scService;
     }
 
-    void process() {
+    public void process() {
         Input input = new Input();
         Output output = scService.calculate(input);
 

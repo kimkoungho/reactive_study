@@ -125,6 +125,9 @@ JVM 세계에서는 리액티브 관련 여러 프레임 워크가 존재한다
 
 
 ### 서비스 레벨에서의 응답성
+하나의 시스템은 작은 시스템의 조합으로 구성되기 때문에 각 요소들의 리액티브 특성에 의존하게 된다. 
+즉 리액티브 시스템 설계 원칙을 모든 구성 요소에 적용하고 합성할 수 있어야 함
+
 ![shoppingcard_service](images/shoppingcard_service.png)
 위 그림과 같은 쇼핑 카드 서비스를 구성한다고 해보자  
 
@@ -135,19 +138,152 @@ public interface ShoppingCardService {
 }
 
 public class OrdersService {
-    private final ShoppingCardService scService;
+    private final ShoppingCardService shoppingCardServiceCallbacks;
 
     void process() {
         Input input = new Input();
         // 동기적으로 호출하고 실행 직후 결과를 얻는 방식 
         // 해당 서비스가 blocking 
-        Output output = scService.calculate(input);
+        Output output = shoppingCardServiceCallbacks.calculate(input);
 
         System.out.println(scService.getClass().getSimpleName() + " execution completed");
     }
 }
 ```
-위와 같은 blocking 방식은 리액티브 시스템에서 비동기 메시지 기반 원칙에 모순된다  
+OrdersService 는 ShoppingCardService 의 결과와 강결합된다  
+위와 같은 blocking 방식은 ShoppingCardService 가 결과를 반환 할 때까지 OrdersService 는 아무일도 하지 못한다   
+그리고 이러한 blocking 방식은 리액티브 시스템에서 비동기 메시지 기반 원칙에 모순된다  
+- [Message Driven](https://www.reactivemanifesto.org/ko/glossary#Message-Driven)
 
+- 콜백 기법
+여기서는 위에서 설명한 OrdersService 는 ShoppingCardService 의 결과에 대한 강결합을 분리(decoupled)할 것  
+```java
+public interface ShoppingCardService {
+    // consumer 를 이용한 콜백 메소드 전달 
+    void calculate(Input value, Consumer<Output> consumer);
+}
+
+public class OrderService {
+    private final ShoppingCardService shoppingCardServiceCallbacks;
+
+    void process() {
+        Input input = new Input();
+        // 실행만 하고 결과는 콜백 메서드에서 처리 
+        shoppingCardServiceCallbacks.calculate(input, output -> {
+            System.out.println(shoppingCardServiceCallbacks.getClass().getSimpleName() + " execution completed");
+        });
+    }
+}
+``` 
+OrderService 는 ShoppingCardService 에게 콜백 메소드만 전달하고 결과에 관여하지 않으므로써 decoupled 됨  
+그리고 목적에 따라 동기, 비동기식으로 ShoppingCardService 인터페이스를 구현할 수 있다   
+- 콜백 + 동기식 구현 
+```java
+public class SyncShoppingCardService implements ShoppingCardService {
+    @Override
+    public void calculate(Input value, Consumer<Output> consumer) {
+        consumer.accept(new Output());
+    }
+}
+```
+여기서는 별도의 I/O 작업이 없기 때문에 blocking 은 일어나지 않는다  
+ㄴ 이런 구현을 왜 했는지 알 수 없지만, 추측컨데 blocking 작업이 일어나는 것은 큰 장점이 없어서 인 듯 ..   
+
+- 콜백 + 비동기식 구현
+```java
+public class AsyncShoppingCardService implements ShoppingCardService {
+    @Override
+    public void calculate(Input value, Consumer<Output> consumer) {
+        new Thread(() -> {
+            Output result = template.getForObject("");
+            //...
+            consumer.accept(result);
+        }).start();
+    }
+}
+```
+비동기식 구현으로 I/O 작업이 일어날 때 별도의 thread 로 래핑하여 콜백을 받도록 구현한다  
+  
+콜백 + 동기식/비동기식 구현의 예제들의 장점은 컴포넌트가 콜백 함수에 의해서 분리된다는 것이다  
+즉, OrdersService 는 ShoppingCardService.calculate() 의 결과를 기다리지 않고 다른 작업을 진행 가능하다  
+단점으로는 공유 데이터 변경 및 콜백 지옥을 피하기 위해서 개발자가 멀티 스레딩을 잘 이해하고 있어야 한다는 것이다  
+
+- Future 이용 
+이번에는 java 의 내장 클래스는 Future 를 이용해서 콜백 함수를 대신하게 구성할 수 있다  
+Future 를 이용하면 실행 동작을 어느 정도 숨기고 구성 요소도 분리가능  
+```java
+public interface ShoppingCardService {
+    Future<Output> calculate(Input value);
+}
+public class OrdersService {
+    private final ShoppingCardService shoppingCardService;
+
+    public void process() {
+        Input input = new Input();
+        // 여기서 비동기 호출이 발생 
+        // ㄴ 사실 즉시 실행되는 것은 아니지만, 실행된다고 보면 됨 
+        Future<Output> result = shoppingCardService.calculate(input);
+        // ... 추가적인 처리
+        
+        // 결과가 있으면 바로 가져오고, 없으면 결과가 있을때까지 blocking
+        Output output = result.get();
+        // ...
+    }
+}
+```
+Future 를 이용하면 결과 값 반환을 지연 시키고 콜백 지옥을 피할 수 있으며, Future 를 이용해서 멀티 스레드 복잡성을 숨길 수 있다    
+위 코드에서 보이는 것 처럼 calculate() 에서 결과를 생성하는 코드가 느리다면 result.get() 메소드를 실행하여 현재 스레드를 차단해야 한다  
+이러한 문제를 피하기 위해서 Java 8 에서는 CompletionStage 및 CompletionStage 의 구현체인 CompletableFuture 를 제공함  
+
+- CompletionStage
+```java
+interface ShoppingCardService {
+    CompletionStage<Output> calculate(Input value);
+}
  
-> 하나의 시스템은 작은 시스템의 조합으로 구성되기 때문에 각 요소들의 리액티브 특성에 의존하게 된다. 즉 리액티브 시스템 설계 원칙을 모든 구성 요소에 적용하고 합성할 수 있어야 함  
+ 
+class OrdersService {
+    private final ShoppingCardService scService;
+    void process() {
+        Input input = ...;
+        scService.calculate(input)
+                 .thenApply(out1 -> { ... })
+                 .thenCombine(out2 -> { ... })
+                 .thenAccept(out3 -> { ... });
+    }
+}
+```
+CompletionStage 는 Future 와 유사한 래퍼 클래스 이지만 반환된 결과를 처리하는 방식이 다르다  
+Future 는 먼저 호출 후, Future.get() 등의 메소드로 결과를 반환 받는 구문이 존재하여 blocking 될 수 있지만,    
+CompletionStage 는 위 코드에서 볼수 있듯이 결과에 대한 처리 메소드를 전달하여 처리하는 방식이다  
+추가적으로 CompletionStage 는 스트림과 유사하게 메서드 체이닝을 이용한 여러가지 연산을 제공한다  
+
+- ListenableFuture  
+스프링 4는 CompletionStage 를 지원하지 않는 구형 자바 버전과의 호환성을 위해서 ListenableFuture 구현하여 자체적으로 제공함  
+```java
+AsyncRestTemplate template = new AsyncRestTemplate();
+SuccessCallback onSuccess = r -> { ... };
+FailureCallback onFailure = e -> { ... };
+ListenableFuture<?> response = template.getForEntity(
+    "http://example.com/api/examples",
+    ExamplesCollection.class
+);
+response.addCallback(onSuccess, onFailure);
+```
+위 코드는 스프링4 에서 ListenableFuture 을 이용한 콜백 스타일의 비동기 코드인데, CompletionStage 에 비해 코드가 지저분하다  
+스프링 프레임워크는 블로킹 네트워크 호출을 별도의 스레드로 래핑하는 방식으로 각각의 요청에 별도의 스레드를 할당하는 서블릿 API 를 사용한다  
+  
+이러한 모델은 상당히 비효율적이다  
+멀티 스레딩의 context switching
+- 서블릿 API 는 매 요청마다 스레드를 생성 = 멀티 스레딩 
+- 멀티 스레딩 환경에서는 여러 스레드는 CPU 를 공유하면서 context switching 이 일이남
+- 빈번한 context switching 은 레지스터, 메모리 맵 및 관련 리소스를 저장하고 다시 불러와야 하기 때문에 오버헤드가 있다 
+- 결과적으로 **적은 수의 CPU 에 동시에 많은 수의 스레드를 활성화 시키는 응용 프로그램은 비효율적**   
+ 
+스레드의 메모리   
+- 자바 스레드는 메모리 소비에 대한 오버 헤드가 있다  
+- 64비트 JVM 에서 스레드의 일반적이 스택의 크기는 1024KB 인데, 만약 64,000 요청을 동시에 처리한다면 64GB 의 메모리가 필요하다  
+- 이런 문제를 피하기 위해서 우리는 일반적으로 스레드 풀을 이용하여 관리하지만 요청이 몰리게되면 사용자는 평균 응답 대기 시간이 늘어난다 
+
+이전의 스프링은 논블로킹 작업을 위한 지원이 미비 했으며, 컨텍스트 스위칭 문제를 해결한 네티와 같은 리액티브 서버와는 제대로 된 통합이 이루어지지 않았음
+스프링은 이러한 문제를 해결하기 위해서 새로운 모듈은 스프링 웹 플럭스 모듈을 구현하게 된다 

@@ -3,7 +3,7 @@ package com.study.spring5reactive.chapter1reactive.strategy.imperative;
 import com.study.spring5reactive.chapter1reactive.common.Input;
 import com.study.spring5reactive.chapter1reactive.common.Output;
 
-public class BlockingShoppingCardService implements ShoppingCardService {
+public class BlockingShoppingCardServiceImperative implements ShoppingCardServiceImperative {
     @Override
     public Output calculate(Input value) {
         try {
