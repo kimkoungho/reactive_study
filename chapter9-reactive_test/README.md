@@ -11,7 +11,7 @@
 reactor-test 모듈에 포함된 StepVerifier 를 이용하면 모든 Publisher 에 대해서 테스트를 위한 플로우를 작성할 수 있음  
 
 
-### StepVerifier 기본 사용 예제 
+#### StepVerifier 기본 사용 예제 
 ```java
 @Test
 public void basic_test() {
@@ -51,7 +51,7 @@ Duration verify() throws AssertionError;
 ``` 
 해당 메소드는 blocking 메소드로 검증이 완료되기 전까지 테스트가 종료되지 않는다  
 
-### StepVerifier 의 expectNextCount 예제
+#### StepVerifier 의 expectNextCount 예제
 스트림에서 얼마나 많은 원소를 생산했는지 검증하려면 expectNextCount 메소드를 이용할 수 있다 
 ```java
 @Test
@@ -72,7 +72,7 @@ expectNextCount(98) 호출하여 스트림이 98개의 원소를 생성했는지
 Step<T> expectNextCount(long count);
 ``` 
 
-### StepVerifier 에서 Hamcrest 를 이용한 검증 
+#### StepVerifier 에서 Hamcrest 를 이용한 검증 
 expectNextCount 메소드를 이용해서 스트림의 요소 수를 검증할 수 있지만, 충분하지 않을 수 있음  
 예를들어 스트림에 필터 조건이 걸려있는 경우 해당 필터가 제대로 동작했는지 검증이 필요할 수 있다  
 이를 검증 하기 위해서 StepVerifier + Hamcrest 조합을 이용할 수 있다 
@@ -122,15 +122,45 @@ public void filter_test() {
 
     StepVerifier.create(walletPublisher)
             .expectSubscription()
+            // consumeRecordedWith 을 사용하기 위해서는 recordWith 이 선행되어야 함 
             .recordWith(ArrayList::new)
             .expectNextCount(1)
+            // publisher 보낸 모든 원소에 대해서 검증을 수행 
             .consumeRecordedWith(wallets ->
+                    // hamcrest 를 이용한 검증 
                     assertThat(wallets, everyItem(hasProperty("owner", equalTo("admin")))))
             .expectComplete()
             .verify();
 }
 ```
+- recordWith(supplier) : supplier 를 이용하여 스트림의 원소를 collection 으로 생성하는 메소드 
+```java
+Step<T> recordWith(Supplier<? extends Collection<T>> supplier);
+```
+위 예제에서는 ArrayList 를 사용하고 있지만 만약 스레드 safe 해야 한다면 ConcurrentLinkedQueue 를 사용해야 함  
+- consumeRecordedWith(consumer) : recordWith 으로 반환된 결과들에 대해서 consumer 를 이용하여 검증을 수행  
+```java
+Step<T> consumeRecordedWith(Consumer<? super Collection<T>> consumer);
+```
 
+#### StepVerifier 의 expectNextMatches 
+```java
+@Test
+public void expectNextMatches_test() {
+    StepVerifier.create(Flux.just("alpha-foo", "betta-bar"))
+            .expectSubscription()
+            .expectNextMatches(e -> e.startsWith("alpha"))
+            .expectNextMatches(e -> e.startsWith("betaa"))
+            .expectComplete()
+            .verify();
+}
+``` 
+- expectNextMatches(predicate) : predicate 를 이용하여 검증
+expectNext() 메소드는 내부적으로 equals() 를 이용하지만 expectNextMatches()는 predicate 를 구현함으로써 유연하게 적용할 수 있음  
+```java
+Step<T> expectNextMatches(Predicate<? super T> predicate);
+```
+ 
  
 
 ### StepVerifier 를 이용한 고급 테스트 

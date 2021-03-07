@@ -59,11 +59,23 @@ public class StepVerifierExampleTest {
 
         StepVerifier.create(walletPublisher)
                 .expectSubscription()
-                //
+                // consumeRecordedWith 을 사용하기 위해서는 recordWith 이 선행되어야 함
                 .recordWith(ArrayList::new)
                 .expectNextCount(1)
+                // publisher 보낸 모든 원소에 대해서 검증을 수행
                 .consumeRecordedWith(wallets ->
+                        // hamcrest 를 이용한 검증
                         assertThat(wallets, everyItem(hasProperty("owner", equalTo("admin")))))
+                .expectComplete()
+                .verify();
+    }
+
+    @Test
+    public void expectNextMatches_test() {
+        StepVerifier.create(Flux.just("alpha-foo", "betta-bar"))
+                .expectSubscription()
+                .expectNextMatches(e -> e.startsWith("alpha"))
+                .expectNextMatches(e -> e.startsWith("betaa"))
                 .expectComplete()
                 .verify();
     }
