@@ -27,6 +27,7 @@ dependencies {
 	testImplementation 'io.projectreactor:reactor-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testImplementation 'org.hamcrest:hamcrest'
+	testImplementation 'junit:junit:4.12'
 }
 
 test {
