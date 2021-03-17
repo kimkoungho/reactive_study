@@ -581,9 +581,91 @@ class PaymentControllerTest {
 - 결과적으로 **WireMock** 을 이용하라고 함   
 
 ### 웹소켓 테스트 
+웹 플럭스는 웹소켓 API 테스트를 위한 솔루션을 제공하지 않고 있음  
+실제로 코드 구현에 사용되는 WebSocketClient 를 사용해서 테스트 해야함  
+  
+WebSocketClient 를 이용하는 코드
+```java
+new ReactorNettyWebSocketClient()
+    .execute(uri, new WebSocketHandler() {...})
+``` 
+- WebSocketClient 를 이용한 테스트는 StepVerifier 등을 이용해서 수신된 데이터를 확인할 수 없음 
+- execute() 는 Mono<Void> 를 반환하기 때문에 개발자가 양쪽을 모두 확인해야 함  
 
+저자가 생각하는 이상적인 웹 소켓 테스트 클라이언트
+ㄴ 여기서 부터는 저자 피셜인것 같음 ... 실제로 git 에 구현도 없고 돌아가는 코드도 아니고 ...
+```java
+interface TestWebSocketClient {
+    Flux<WebSocketMessage> sendAndReceive(Publisher<?> outgoingSource);
+}
+``` 
 
+TestWebSocketClient 를 적용하기 위해선 먼저 WebSocketHandler 에 지정된 WebSocketSession 을 처리해야함 
+```java
+Mono.create(sink ->
+    sink.onCancel(
+        client.execute(uri, session -> {
+            sink.success(session);
+            return Mono.never();
+        })
+        .doOnError(sink::error)
+        .subscribe()
+    )
+);
+```
+- Mono.create() + MonoSink 를 이용해서 세션에서 비동기 콜백을 처리하는 기존 방식을 사용 가능 
+- Mono.never() 를 반환하여 MonoSink 전달되자마자 커넥션을 취소한다  
 
- 
+API 관련해서 처리항 두번째 단계는 WebSocketSession 을 적용하는 것 
+```java
+public Flux<WebSocketMessage> sendAndReceive( Publisher<?> outgoingSource){
+    ...
+    .flatMapMany(session -> 
+        session.receive()
+            .mergeWith(
+                .Flux.from(outgoingSource)
+                .map(Object::toString)
+                .map(session::textMessage) 
+                .as(session::send) 
+                .then(Mono.empty())
+            )
+    );
+}
+```
+- 여기서는 WebSocketMessages 를 받고 송신 메시지를 서버로 보낸다  
 
+마지막으로 테스트 코드 
+```java
+@RunWith(SpringRunner.class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT)
+public class WebSocketTests {
+    @Test
+    @WithMockUser
+    public void checkThatUserIsAbleToMakeATrade() {
+        URI uri = URI.create("ws://localhost:8080/stream"); 
+        TestWebSocketClient client = TestWebSocketClient.create(uri); 
+        TestPublisher<String> testPublisher = TestPublisher.create();
+        Flux<String> inbound = testPublisher
+            .flux()
+            .subscribeWith(ReplayProcessor .create(1))
+            .transform(client::sendAndReceive)
+            .map(WebSocketMessage::getPayloadAsText);
 
+        StepVerifier.create(inbound)
+            .expectSubscription()
+            .then(() -> testPublisher. next("TRADES|BTC"))
+            .expectNext("PRICE|AMOUNT|CURRENCY")
+            .then(() ->testPublisher.next("TRADE: 10123|1.54|BTC"))
+            .expectNext("10123|1.54|BTC")
+            .then(() ->testPublisher.next("TRADE: 10090|-0.01|BTC"))
+            .expectNext("10090|-0.01|BTC")
+            .thenCancel()
+            .verify();
+
+    }
+}
+```
+- webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT 설정을 이용하여 스프링 프레임워크에 설정한 포트를 사용한다는 것을 알려줌  
+- WebSocketClient 는 실제 HTTP 를 호출해야 하기 때문에 필요함  
+- 위 예제는 비트 코인 거래소에 대한 소켓 커넥션을 기준으로 작성된 코드
+- WebSocketClient 를 mocking 해야 한다면 mock 서버를 구축하는 방법밖에 없음 
